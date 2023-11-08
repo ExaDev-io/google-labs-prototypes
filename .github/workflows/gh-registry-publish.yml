@@ -1,0 +1,53 @@
+name: Publish package to GitHub Packages
+on:
+  workflow_dispatch:
+  push:
+  # release:
+  #   types: [published]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        working-directory:
+          - "seeds/breadboard"
+    # defaults:
+    #   run:
+    #     working-directory: ${{ matrix.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "19.x"
+          registry-url: "https://npm.pkg.github.com"
+
+      - run: npm ci
+
+      - name: Create unique version
+        if: github.ref != 'refs/heads/main'
+        run: |
+          CURENT_VERSION=$(node -p "require('./package.json').version")
+
+          MAJOR=$(echo $CURENT_VERSION | cut -d. -f1)
+          MINOR=$(echo $CURENT_VERSION | cut -d. -f2)
+          PATCH=$(echo $CURENT_VERSION | cut -d. -f3)
+
+          UNIQUE_VERSION="$MAJOR.$MINOR.0-$(date +%s)"
+          echo "UNIQUE_VERSION=$UNIQUE_VERSION"
+
+          npm version "${UNIQUE_VERSION}" --no-git-tag-version --force
+      - run: npm config set registry https://npm.pkg.github.com
+      - run: npm pkg set publishConfig.registry=https://npm.pkg.github.com
+      - run: npm run build
+      - working-directory: ${{ matrix.working-directory }}
+        run: |
+          echo "@${{ github.repository_owner }}:registry=https://npm.pkg.github.com" >> .npmrc
+          echo "//npm.pkg.github.com/:_authToken=$NODE_AUTH_TOKEN" >> .npmrc
+          npm pkg set name="@${{ github.repository_owner }}/breadboard"
+          npm run build
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
